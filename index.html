@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JirafasCeliacas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            background-color: #ffffff;
+            overflow-x: hidden;
+        }
+
+        /* Retícula asimétrica densa: celdas base finas para permitir proporciones muy variadas y orgánicas */
+        .abstract-mosaic {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(var(--cell-w, 95px), 1fr));
+            grid-auto-rows: var(--cell-h, 75px);
+            grid-auto-flow: dense;
+            gap: var(--grid-gap, 8px);
+            padding: var(--grid-gap, 8px);
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        /* Geometrías asimétricas: tiras finas, bloques alargados, panorámicas y torres */
+        .shape-strip-h { grid-column: span 4; grid-row: span 1; }
+        .shape-strip-v { grid-column: span 1; grid-row: span 4; }
+        .shape-wide    { grid-column: span 3; grid-row: span 2; }
+        .shape-tall    { grid-column: span 2; grid-row: span 4; }
+        .shape-hero    { grid-column: span 4; grid-row: span 3; }
+        .shape-pillar  { grid-column: span 1; grid-row: span 3; }
+        .shape-banner  { grid-column: span 3; grid-row: span 1; }
+        .shape-medium  { grid-column: span 2; grid-row: span 2; }
+        .shape-compact { grid-column: span 2; grid-row: span 1; }
+        .shape-sliver  { grid-column: span 1; grid-row: span 2; }
+
+        /* Cortes abstractos sutiles y radios asimétricos para romper los ángulos rectos */
+        .cut-a { border-radius: 28px 4px 24px 4px; }
+        .cut-b { border-radius: 4px 32px 4px 28px; }
+        .cut-c { clip-path: polygon(0 4%, 100% 0, 100% 96%, 0 100%); }
+        .cut-d { clip-path: polygon(3% 0, 100% 0, 97% 100%, 0 100%); }
+        .cut-e { border-radius: 40px 40px 6px 6px; }
+        .cut-f { border-radius: 6px 6px 40px 40px; }
+        .cut-g { border-radius: 2px; }
+
+        @media (max-width: 520px) {
+            .shape-strip-h, .shape-hero { grid-column: span 3; }
+            .shape-wide, .shape-banner  { grid-column: span 2; }
+        }
+
+        .tile {
+            position: relative;
+            overflow: hidden;
+            background-color: #f4f4f5;
+            cursor: zoom-in;
+            opacity: 0;
+            transform: scale(0.94);
+            transition: opacity 0.65s ease, transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .tile.loaded {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        .tile img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            object-position: center 15%;
+            display: block;
+            transition: transform 0.6s ease;
+        }
+
+        .tile:hover img {
+            transform: scale(1.06);
+        }
+
+        /* Lightbox minimalista para imagen ampliada */
+        #lightbox {
+            position: fixed;
+            inset: 0;
+            background: rgba(10, 10, 12, 0.92);
+            backdrop-filter: blur(8px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            padding: 24px;
+        }
+
+        #lightbox.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        #lightbox img {
+            max-width: 92vw;
+            max-height: 90vh;
+            object-fit: contain;
+            border-radius: 14px;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6);
+            transform: scale(0.95);
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        #lightbox.active img {
+            transform: scale(1);
+        }
+
+        #lightbox-close {
+            position: fixed;
+            top: 20px;
+            right: 24px;
+            width: 44px;
+            height: 44px;
+            border-radius: 9999px;
+            background: rgba(255, 255, 255, 0.15);
+            color: #ffffff;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            line-height: 1;
+            cursor: pointer;
+            transition: background 0.2s ease, transform 0.2s ease;
+            z-index: 10000;
+        }
+
+        #lightbox-close:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: scale(1.08);
+        }
+    </style>
+</head>
+<body>
+
+    <main id="mosaic" class="abstract-mosaic"></main>
+    <div id="scroll-sentinel" class="w-full h-32"></div>
+
+    <!-- Vista ampliada al clicar una imagen -->
+    <div id="lightbox" role="dialog" aria-modal="true">
+        <button id="lightbox-close" aria-label="Cerrar imagen">&times;</button>
+        <img id="lightbox-img" src="" alt="">
+    </div>
+
+    <script>
+        const mosaic = document.getElementById('mosaic');
+        const sentinel = document.getElementById('scroll-sentinel');
+        const lightbox = document.getElementById('lightbox');
+        const lightboxImg = document.getElementById('lightbox-img');
+        const lightboxClose = document.getElementById('lightbox-close');
+
+        function openLightbox(url) {
+            lightboxImg.src = url;
+            lightbox.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeLightbox() {
+            lightbox.classList.remove('active');
+            document.body.style.overflow = '';
+            setTimeout(() => {
+                if (!lightbox.classList.contains('active')) {
+                    lightboxImg.src = '';
+                }
+            }, 300);
+        }
+
+        lightboxClose.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeLightbox();
+        });
+
+        lightbox.addEventListener('click', (e) => {
+            if (e.target === lightbox) {
+                closeLightbox();
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && lightbox.classList.contains('active')) {
+                closeLightbox();
+            }
+        });
+
+        let isLoadingBatch = false;
+        let isFetchingMore = false;
+        const availableUrls = [];
+        const usedUrls = new Set();
+
+        const allShapes = [
+            'shape-strip-h',
+            'shape-strip-v',
+            'shape-wide',
+            'shape-tall',
+            'shape-hero',
+            'shape-pillar',
+            'shape-banner',
+            'shape-medium',
+            'shape-compact',
+            'shape-sliver'
+        ];
+
+        const allCuts = ['cut-a', 'cut-b', 'cut-c', 'cut-d', 'cut-e', 'cut-f', 'cut-g'];
+
+        let sessionShapes = [];
+        let sessionCuts = [];
+        let lastShape = '';
+
+        // Mezcla aleatoriamente un arreglo in-place (Fisher-Yates)
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        // Configura dimensiones y formas distintas cada vez que se abre la página
+        function randomizeSessionLayout() {
+            const isMobile = window.innerWidth < 768;
+            // Celdas rectangulares (ancho != alto) para evitar por completo proporciones cuadradas
+            const cellW = isMobile
+                ? Math.floor(Math.random() * 25) + 75   // 75px - 100px
+                : Math.floor(Math.random() * 45) + 85;  // 85px - 130px
+            const cellH = isMobile
+                ? Math.floor(Math.random() * 25) + 55   // 55px - 80px
+                : Math.floor(Math.random() * 40) + 60;  // 60px - 100px
+            const gapSize = Math.floor(Math.random() * 10) + 4; // 4px - 13px
+
+            document.documentElement.style.setProperty('--cell-w', `${cellW}px`);
+            document.documentElement.style.setProperty('--cell-h', `${cellH}px`);
+            document.documentElement.style.setProperty('--grid-gap', `${gapSize}px`);
+
+            sessionShapes = [];
+            allShapes.forEach(shape => {
+                const weight = Math.floor(Math.random() * 4) + 1;
+                for (let i = 0; i < weight; i++) sessionShapes.push(shape);
+            });
+            shuffle(sessionShapes);
+
+            sessionCuts = [];
+            allCuts.forEach(cut => {
+                const weight = Math.floor(Math.random() * 3) + 1;
+                for (let i = 0; i < weight; i++) sessionCuts.push(cut);
+            });
+            shuffle(sessionCuts);
+        }
+
+        // Agrega solo URLs válidas de fotografías reales de jirafas (usando miniaturas optimizadas para carga ultrarrápida)
+        function registerPages(pages) {
+            if (!pages) return;
+            let added = 0;
+            for (const page of Object.values(pages)) {
+                const info = page.imageinfo?.[0];
+                if (!info || (info.width || 0) < 400) continue;
+
+                // Usar thumburl (800px) en lugar de la foto original de 5MB+ acelera la carga 10x
+                const rawUrl = info.thumburl || info.url;
+                if (typeof rawUrl !== 'string') continue;
+
+                const cleanUrl = rawUrl.split('#')[0];
+                const title = page.title || '';
+
+                // Verificar estrictamente que sea un retrato/primer plano real de jirafa y no un paisaje lejano u otro animal
+                const isGiraffe = /(giraffe|giraffa|camelopardalis|girafe|jirafa)/i.test(title);
+                const isExcluded = /(logo|icon|map|range|distribution|diagram|skull|skeleton|stamp|flag|svg|banner|zebra|elephant|lion|ostrich|okapi|impala|wildebeest|antelope|rhino|hippo|buffalo|cheetah|leopard|hyena|monkey|baboon|bird|vulture|stork|statue|toy|plush|drawing|painting|illustration|cartoon|art|mural|coin|landscape|savanna|herd|distant|far|tracks|footprint|dung|poop)/i.test(title);
+
+                if (
+                    cleanUrl.startsWith('https://') &&
+                    /\.(jpe?g|png|webp)(\?.*)?$/i.test(cleanUrl) &&
+                    isGiraffe &&
+                    !isExcluded &&
+                    !usedUrls.has(cleanUrl) &&
+                    !availableUrls.includes(cleanUrl)
+                ) {
+                    availableUrls.push(cleanUrl);
+                    added++;
+                }
+            }
+            if (added > 0) {
+                shuffle(availableUrls);
+            }
+        }
+
+        // Consulta categorías exclusivas de retratos y jirafas reales en Wikimedia Commons
+        async function fetchMoreGiraffes() {
+            if (isFetchingMore) return;
+            isFetchingMore = true;
+
+            const categories = [
+                'Category:Giraffe_portraits',
+                'Category:Giraffe_heads',
+                'Category:Giraffa_camelopardalis_reticulata',
+                'Category:Giraffa_camelopardalis_tippelskirchi',
+                'Category:Giraffa_camelopardalis_rothschildi',
+                'Category:Giraffa_camelopardalis_angolensis',
+                'Category:Giraffa_camelopardalis_giraffa',
+                'Category:Giraffes_feeding',
+                'Category:Giraffes_in_zoos',
+                'Category:Giraffa_camelopardalis_peralta',
+                'Category:Giraffa_camelopardalis_thornicrofti',
+                'Category:Giraffa_camelopardalis'
+            ];
+
+            const searchQueries = [
+                'Giraffe portrait',
+                'Giraffe head',
+                'Giraffe face',
+                'Giraffe closeup',
+                'Reticulated giraffe',
+                'Masai giraffe',
+                'Rothschild giraffe',
+                'Giraffe feeding',
+                'Giraffa camelopardalis'
+            ];
+
+            const randomCat = categories[Math.floor(Math.random() * categories.length)];
+            const randomCat2 = categories[Math.floor(Math.random() * categories.length)];
+            const randomQuery = searchQueries[Math.floor(Math.random() * searchQueries.length)];
+            const randomOffset = Math.floor(Math.random() * 60);
+
+            const requests = [
+                // 1. Primera categoría exclusiva de retratos/jirafas en Wikimedia Commons (con iiurlwidth=800 para descarga instantánea)
+                fetch(`https://commons.wikimedia.org/w/api.php?action=query&generator=categorymembers&gcmtitle=${encodeURIComponent(randomCat)}&gcmtype=file&gcmlimit=50&prop=imageinfo&iiprop=url|size&iiurlwidth=800&format=json&origin=*`)
+                    .then(r => r.json())
+                    .then(data => registerPages(data?.query?.pages))
+                    .catch(() => {}),
+
+                // 2. Segunda categoría exclusiva de jirafas en Wikimedia Commons
+                fetch(`https://commons.wikimedia.org/w/api.php?action=query&generator=categorymembers&gcmtitle=${encodeURIComponent(randomCat2)}&gcmtype=file&gcmlimit=50&prop=imageinfo&iiprop=url|size&iiurlwidth=800&format=json&origin=*`)
+                    .then(r => r.json())
+                    .then(data => registerPages(data?.query?.pages))
+                    .catch(() => {}),
+
+                // 3. Búsqueda filtrada por primer plano/retrato con desplazamiento aleatorio en Commons
+                fetch(`https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=filetype:bitmap+intitle:Giraffe+${encodeURIComponent(randomQuery)}&gsrnamespace=6&gsrlimit=50&gsroffset=${randomOffset}&prop=imageinfo&iiprop=url|size&iiurlwidth=800&format=json&origin=*`)
+                    .then(r => r.json())
+                    .then(data => registerPages(data?.query?.pages))
+                    .catch(() => {})
+            ];
+
+            await Promise.all(requests);
+            isFetchingMore = false;
+        }
+
+        // Extrae una URL única garantizada; si quedan pocas, dispara recarga en segundo plano
+        function popUniqueUrl() {
+            if (availableUrls.length < 20) {
+                fetchMoreGiraffes();
+            }
+            while (availableUrls.length > 0) {
+                const candidate = availableUrls.pop();
+                if (!usedUrls.has(candidate)) {
+                    usedUrls.add(candidate);
+                    return candidate;
+                }
+            }
+            return null;
+        }
+
+        // Elige una forma distinta a la anterior para evitar repeticiones visuales seguidas
+        function pickAbstractShape() {
+            let shape = sessionShapes[Math.floor(Math.random() * sessionShapes.length)];
+            if (shape === lastShape) {
+                shape = sessionShapes[(sessionShapes.indexOf(shape) + 1) % sessionShapes.length];
+            }
+            lastShape = shape;
+            const cut = sessionCuts[Math.floor(Math.random() * sessionCuts.length)];
+            return `${shape} ${cut}`;
+        }
+
+        // Detecta en un canvas reducido dónde se concentra la parte superior de la jirafa (tonos cálidos/ocres)
+        // para centrar el encuadre exactamente en la cabeza y cuello superior
+        function detectGiraffeHeadFocalPoint(img) {
+            try {
+                const canvas = document.createElement('canvas');
+                const size = 48;
+                canvas.width = size;
+                canvas.height = size;
+                const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                ctx.drawImage(img, 0, 0, size, size);
+                const data = ctx.getImageData(0, 0, size, size).data;
+
+                let topHeadY = size;
+                let weightedX = 0;
+                let totalWeight = 0;
+
+                for (let y = 0; y < size; y++) {
+                    for (let x = 0; x < size; x++) {
+                        const idx = (y * size + x) * 4;
+                        const r = data[idx];
+                        const g = data[idx + 1];
+                        const b = data[idx + 2];
+
+                        // Detectar tonos cálidos de pelaje de jirafa (amarillo/ocre/marrón) frente a cielo azul o follaje verde
+                        const isGiraffeTone = r > 95 && g > 55 && r > b * 1.28 && (r - b) > 35;
+                        if (isGiraffeTone) {
+                            // Dar mayor peso a la zona superior donde está la cabeza
+                            const topPriority = 1 + (size - y) / size;
+                            weightedX += x * topPriority;
+                            totalWeight += topPriority;
+                            if (y < topHeadY) {
+                                topHeadY = y;
+                            }
+                        }
+                    }
+                }
+
+                if (totalWeight > 12) {
+                    const focusX = Math.min(82, Math.max(18, Math.round((weightedX / totalWeight / size) * 100)));
+                    // Posicionar ligeramente por debajo del punto más alto detectado (osiconos/orejas) para asegurar cabeza completa
+                    const focusY = Math.min(45, Math.max(4, Math.round(((topHeadY + 4) / size) * 100)));
+                    return `${focusX}% ${focusY}%`;
+                }
+            } catch (e) {
+                // Respaldo si CORS impide leer píxeles
+            }
+            const isPortrait = img.naturalHeight >= img.naturalWidth;
+            return isPortrait ? '50% 10%' : '50% 15%';
+        }
+
+        // Evita asignar formas ultra-estrechas o ultra-aplastadas que recortan demasiado la cabeza
+        function pickCompatibleShape(img) {
+            const ratio = img.naturalWidth / (img.naturalHeight || 1);
+            let candidates = sessionShapes.filter(s => {
+                if (ratio < 0.85) {
+                    // Foto vertical: evitar tiras horizontales extremas que cortan cabeza y cuello
+                    return s !== 'shape-strip-h' && s !== 'shape-banner';
+                }
+                if (ratio > 1.35) {
+                    // Foto horizontal: evitar columnas estrechas que recortan los lados de la cabeza
+                    return s !== 'shape-strip-v' && s !== 'shape-sliver' && s !== 'shape-pillar';
+                }
+                return true;
+            });
+
+            if (candidates.length === 0) candidates = sessionShapes;
+            let shape = candidates[Math.floor(Math.random() * candidates.length)];
+            if (shape === lastShape && candidates.length > 1) {
+                shape = candidates[(candidates.indexOf(shape) + 1) % candidates.length];
+            }
+            lastShape = shape;
+            const cut = sessionCuts[Math.floor(Math.random() * sessionCuts.length)];
+            return `${shape} ${cut}`;
+        }
+
+        function createTile(url) {
+            const tile = document.createElement('div');
+            tile.className = 'tile';
+
+            const img = document.createElement('img');
+            img.alt = '';
+            img.crossOrigin = 'anonymous';
+            img.referrerPolicy = 'no-referrer';
+            img.decoding = 'async';
+            img.fetchPriority = 'high';
+
+            img.onload = () => {
+                tile.classList.add(...pickCompatibleShape(img).split(' '));
+                img.style.objectPosition = detectGiraffeHeadFocalPoint(img);
+                tile.classList.add('loaded');
+            };
+
+            img.onerror = () => {
+                tile.remove();
+            };
+
+            tile.addEventListener('click', () => {
+                openLightbox(url);
+            });
+
+            img.src = url;
+            tile.appendChild(img);
+            mosaic.appendChild(tile);
+        }
+
+        async function loadBatch(count = 14) {
+            if (isLoadingBatch) return;
+            isLoadingBatch = true;
+
+            if (availableUrls.length < count) {
+                await fetchMoreGiraffes();
+            }
+
+            let created = 0;
+            while (created < count) {
+                const url = popUniqueUrl();
+                if (!url) break;
+                createTile(url);
+                created++;
+            }
+
+            setTimeout(() => {
+                isLoadingBatch = false;
+                checkSentinelVisibility();
+            }, 300);
+        }
+
+        function checkSentinelVisibility() {
+            const rect = sentinel.getBoundingClientRect();
+            if (rect.top <= window.innerHeight + 700 && availableUrls.length > 0) {
+                loadBatch(10);
+            }
+        }
+
+        const observer = new IntersectionObserver((entries) => {
+            if (entries[0].isIntersecting) {
+                loadBatch(12);
+            }
+        }, {
+            rootMargin: '700px'
+        });
+
+        observer.observe(sentinel);
+
+        window.addEventListener('DOMContentLoaded', async () => {
+            randomizeSessionLayout();
+            await fetchMoreGiraffes();
+            loadBatch(18);
+            // Precarga un segundo lote en segundo plano sin bloquear el renderizado inicial
+            fetchMoreGiraffes();
+        });
+    </script>
+</body>
+</html>
