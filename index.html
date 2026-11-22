@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JirafasCeliacas</title>
-    <link rel="shortcut icon" href="jirafa.png" type="image/jpeg">
+    <link rel="icon" type="image/png" href="jirafa.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         html, body {
@@ -194,8 +194,10 @@
 
         let isLoadingBatch = false;
         let isFetchingMore = false;
-        const availableUrls = [];
+        const giraffeUrls = [];
+        const wheatUrls = [];
         const usedUrls = new Set();
+        let nextTypeIsGiraffe = Math.random() < 0.5;
 
         const allShapes = [
             'shape-strip-h',
@@ -211,93 +213,85 @@
         ];
 
         const allCuts = ['cut-a', 'cut-b', 'cut-c', 'cut-d', 'cut-e', 'cut-f', 'cut-g'];
-
-        let sessionShapes = [];
-        let sessionCuts = [];
+        let sessionShapes = [...allShapes];
+        let sessionCuts = [...allCuts];
         let lastShape = '';
 
-        // Mezcla aleatoriamente un arreglo in-place (Fisher-Yates)
-        function shuffle(array) {
-            for (let i = array.length - 1; i > 0; i--) {
+        function shuffle(arr) {
+            for (let i = arr.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
-                [array[i], array[j]] = [array[j], array[i]];
+                [arr[i], arr[j]] = [arr[j], arr[i]];
             }
-            return array;
+            return arr;
         }
 
-        // Configura dimensiones y formas distintas cada vez que se abre la página
         function randomizeSessionLayout() {
-            const isMobile = window.innerWidth < 768;
-            // Celdas rectangulares (ancho != alto) para evitar por completo proporciones cuadradas
-            const cellW = isMobile
-                ? Math.floor(Math.random() * 25) + 75   // 75px - 100px
-                : Math.floor(Math.random() * 45) + 85;  // 85px - 130px
-            const cellH = isMobile
-                ? Math.floor(Math.random() * 25) + 55   // 55px - 80px
-                : Math.floor(Math.random() * 40) + 60;  // 60px - 100px
-            const gapSize = Math.floor(Math.random() * 10) + 4; // 4px - 13px
+            const cellW = Math.floor(Math.random() * 45) + 75;
+            const cellH = Math.floor(Math.random() * 35) + 60;
+            const gap = Math.floor(Math.random() * 10) + 4;
 
-            document.documentElement.style.setProperty('--cell-w', `${cellW}px`);
-            document.documentElement.style.setProperty('--cell-h', `${cellH}px`);
-            document.documentElement.style.setProperty('--grid-gap', `${gapSize}px`);
+            mosaic.style.setProperty('--cell-w', `${cellW}px`);
+            mosaic.style.setProperty('--cell-h', `${cellH}px`);
+            mosaic.style.setProperty('--grid-gap', `${gap}px`);
 
-            sessionShapes = [];
-            allShapes.forEach(shape => {
-                const weight = Math.floor(Math.random() * 4) + 1;
-                for (let i = 0; i < weight; i++) sessionShapes.push(shape);
-            });
+            sessionShapes = [...allShapes];
+            sessionCuts = [...allCuts];
             shuffle(sessionShapes);
-
-            sessionCuts = [];
-            allCuts.forEach(cut => {
-                const weight = Math.floor(Math.random() * 3) + 1;
-                for (let i = 0; i < weight; i++) sessionCuts.push(cut);
-            });
             shuffle(sessionCuts);
         }
 
-        // Agrega solo URLs válidas de fotografías reales de jirafas (usando miniaturas optimizadas para carga ultrarrápida)
-        function registerPages(pages) {
+        // Agrega solo URLs válidas de jirafas o trigo/gluten según el tipo solicitado
+        function registerPages(pages, type) {
             if (!pages) return;
+            const targetPool = type === 'giraffe' ? giraffeUrls : wheatUrls;
             let added = 0;
+
             for (const page of Object.values(pages)) {
                 const info = page.imageinfo?.[0];
                 if (!info || (info.width || 0) < 400) continue;
 
-                // Usar thumburl (800px) en lugar de la foto original de 5MB+ acelera la carga 10x
                 const rawUrl = info.thumburl || info.url;
                 if (typeof rawUrl !== 'string') continue;
 
                 const cleanUrl = rawUrl.split('#')[0];
                 const title = page.title || '';
 
-                // Verificar estrictamente que sea un retrato/primer plano real de jirafa y no un paisaje lejano u otro animal
-                const isGiraffe = /(giraffe|giraffa|camelopardalis|girafe|jirafa)/i.test(title);
-                const isExcluded = /(logo|icon|map|range|distribution|diagram|skull|skeleton|stamp|flag|svg|banner|zebra|elephant|lion|ostrich|okapi|impala|wildebeest|antelope|rhino|hippo|buffalo|cheetah|leopard|hyena|monkey|baboon|bird|vulture|stork|statue|toy|plush|drawing|painting|illustration|cartoon|art|mural|coin|landscape|savanna|herd|distant|far|tracks|footprint|dung|poop)/i.test(title);
+                const commonExcluded = /(logo|icon|map|range|distribution|diagram|skull|skeleton|stamp|flag|svg|banner|statue|toy|plush|drawing|painting|illustration|cartoon|art|mural|coin|chart|graph|table|text|document)/i.test(title);
+                if (commonExcluded) continue;
+
+                let matchesType = false;
+                if (type === 'giraffe') {
+                    const isGiraffe = /(giraffe|giraffa|camelopardalis|girafe|jirafa)/i.test(title);
+                    const isGiraffeExcluded = /(zebra|elephant|lion|ostrich|okapi|impala|wildebeest|antelope|rhino|hippo|buffalo|cheetah|leopard|hyena|monkey|baboon|bird|vulture|stork|landscape|savanna|herd|distant|far|tracks|footprint|dung|poop)/i.test(title);
+                    matchesType = isGiraffe && !isGiraffeExcluded;
+                } else {
+                    const isWheat = /(wheat|triticum|trigo|blé|weizen|grano|espiga)/i.test(title);
+                    const isWheatExcluded = /(gluten-free|sin_gluten|tractor|machine|combine|factory|building|person|portrait|man|woman|child|hand|tableware|menu|bread|cake|pizza|pasta|croissant)/i.test(title);
+                    matchesType = isWheat && !isWheatExcluded;
+                }
 
                 if (
                     cleanUrl.startsWith('https://') &&
                     /\.(jpe?g|png|webp)(\?.*)?$/i.test(cleanUrl) &&
-                    isGiraffe &&
-                    !isExcluded &&
+                    matchesType &&
                     !usedUrls.has(cleanUrl) &&
-                    !availableUrls.includes(cleanUrl)
+                    !targetPool.includes(cleanUrl)
                 ) {
-                    availableUrls.push(cleanUrl);
+                    targetPool.push(cleanUrl);
                     added++;
                 }
             }
             if (added > 0) {
-                shuffle(availableUrls);
+                shuffle(targetPool);
             }
         }
 
-        // Consulta categorías exclusivas de retratos y jirafas reales en Wikimedia Commons
-        async function fetchMoreGiraffes() {
+        // Consulta categorías exclusivas de jirafas y de trigo/gluten en Wikimedia Commons
+        async function fetchMoreMedia() {
             if (isFetchingMore) return;
             isFetchingMore = true;
 
-            const categories = [
+            const giraffeCategories = [
                 'Category:Giraffe_portraits',
                 'Category:Giraffe_heads',
                 'Category:Giraffa_camelopardalis_reticulata',
@@ -307,45 +301,64 @@
                 'Category:Giraffa_camelopardalis_giraffa',
                 'Category:Giraffes_feeding',
                 'Category:Giraffes_in_zoos',
-                'Category:Giraffa_camelopardalis_peralta',
-                'Category:Giraffa_camelopardalis_thornicrofti',
                 'Category:Giraffa_camelopardalis'
             ];
 
-            const searchQueries = [
+            const wheatCategories = [
+                'Category:Wheat',
+                'Category:Wheat_ears',
+                'Category:Wheat_grains',
+                'Category:Wheat_fields',
+                'Category:Triticum_aestivum',
+                'Category:Triticum_durum',
+                'Category:Harvested_wheat',
+                'Category:Wheat_spikelets'
+            ];
+
+            const giraffeQueries = [
                 'Giraffe portrait',
                 'Giraffe head',
                 'Giraffe face',
                 'Giraffe closeup',
-                'Reticulated giraffe',
-                'Masai giraffe',
-                'Rothschild giraffe',
-                'Giraffe feeding',
                 'Giraffa camelopardalis'
             ];
 
-            const randomCat = categories[Math.floor(Math.random() * categories.length)];
-            const randomCat2 = categories[Math.floor(Math.random() * categories.length)];
-            const randomQuery = searchQueries[Math.floor(Math.random() * searchQueries.length)];
-            const randomOffset = Math.floor(Math.random() * 60);
+            const wheatQueries = [
+                'Wheat ears',
+                'Wheat grain',
+                'Golden wheat field',
+                'Triticum aestivum',
+                'Wheat harvest',
+                'Wheat stalks'
+            ];
+
+            const gCat = giraffeCategories[Math.floor(Math.random() * giraffeCategories.length)];
+            const wCat = wheatCategories[Math.floor(Math.random() * wheatCategories.length)];
+            const gQuery = giraffeQueries[Math.floor(Math.random() * giraffeQueries.length)];
+            const wQuery = wheatQueries[Math.floor(Math.random() * wheatQueries.length)];
+            const randomOffset = Math.floor(Math.random() * 50);
 
             const requests = [
-                // 1. Primera categoría exclusiva de retratos/jirafas en Wikimedia Commons (con iiurlwidth=800 para descarga instantánea)
-                fetch(`https://commons.wikimedia.org/w/api.php?action=query&generator=categorymembers&gcmtitle=${encodeURIComponent(randomCat)}&gcmtype=file&gcmlimit=50&prop=imageinfo&iiprop=url|size&iiurlwidth=800&format=json&origin=*`)
+                // Jirafas (Categoría + Búsqueda)
+                fetch(`https://commons.wikimedia.org/w/api.php?action=query&generator=categorymembers&gcmtitle=${encodeURIComponent(gCat)}&gcmtype=file&gcmlimit=50&prop=imageinfo&iiprop=url|size&iiurlwidth=800&format=json&origin=*`)
                     .then(r => r.json())
-                    .then(data => registerPages(data?.query?.pages))
+                    .then(data => registerPages(data?.query?.pages, 'giraffe'))
                     .catch(() => {}),
 
-                // 2. Segunda categoría exclusiva de jirafas en Wikimedia Commons
-                fetch(`https://commons.wikimedia.org/w/api.php?action=query&generator=categorymembers&gcmtitle=${encodeURIComponent(randomCat2)}&gcmtype=file&gcmlimit=50&prop=imageinfo&iiprop=url|size&iiurlwidth=800&format=json&origin=*`)
+                fetch(`https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=filetype:bitmap+intitle:Giraffe+${encodeURIComponent(gQuery)}&gsrnamespace=6&gsrlimit=50&gsroffset=${randomOffset}&prop=imageinfo&iiprop=url|size&iiurlwidth=800&format=json&origin=*`)
                     .then(r => r.json())
-                    .then(data => registerPages(data?.query?.pages))
+                    .then(data => registerPages(data?.query?.pages, 'giraffe'))
                     .catch(() => {}),
 
-                // 3. Búsqueda filtrada por primer plano/retrato con desplazamiento aleatorio en Commons
-                fetch(`https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=filetype:bitmap+intitle:Giraffe+${encodeURIComponent(randomQuery)}&gsrnamespace=6&gsrlimit=50&gsroffset=${randomOffset}&prop=imageinfo&iiprop=url|size&iiurlwidth=800&format=json&origin=*`)
+                // Trigo y Gluten (Categoría + Búsqueda)
+                fetch(`https://commons.wikimedia.org/w/api.php?action=query&generator=categorymembers&gcmtitle=${encodeURIComponent(wCat)}&gcmtype=file&gcmlimit=50&prop=imageinfo&iiprop=url|size&iiurlwidth=800&format=json&origin=*`)
                     .then(r => r.json())
-                    .then(data => registerPages(data?.query?.pages))
+                    .then(data => registerPages(data?.query?.pages, 'wheat'))
+                    .catch(() => {}),
+
+                fetch(`https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=filetype:bitmap+${encodeURIComponent(wQuery)}&gsrnamespace=6&gsrlimit=50&gsroffset=${randomOffset}&prop=imageinfo&iiprop=url|size&iiurlwidth=800&format=json&origin=*`)
+                    .then(r => r.json())
+                    .then(data => registerPages(data?.query?.pages, 'wheat'))
                     .catch(() => {})
             ];
 
@@ -353,16 +366,24 @@
             isFetchingMore = false;
         }
 
-        // Extrae una URL única garantizada; si quedan pocas, dispara recarga en segundo plano
-        function popUniqueUrl() {
-            if (availableUrls.length < 20) {
-                fetchMoreGiraffes();
+        // Extrae alternando 50% jirafas y 50% trigo/gluten sin repetir URLs
+        function popUniqueItem() {
+            if (giraffeUrls.length < 15 || wheatUrls.length < 15) {
+                fetchMoreMedia();
             }
-            while (availableUrls.length > 0) {
-                const candidate = availableUrls.pop();
-                if (!usedUrls.has(candidate)) {
-                    usedUrls.add(candidate);
-                    return candidate;
+
+            const primaryType = nextTypeIsGiraffe ? 'giraffe' : 'wheat';
+            const secondaryType = nextTypeIsGiraffe ? 'wheat' : 'giraffe';
+            nextTypeIsGiraffe = !nextTypeIsGiraffe;
+
+            for (const type of [primaryType, secondaryType]) {
+                const pool = type === 'giraffe' ? giraffeUrls : wheatUrls;
+                while (pool.length > 0) {
+                    const candidate = pool.pop();
+                    if (!usedUrls.has(candidate)) {
+                        usedUrls.add(candidate);
+                        return { url: candidate, type };
+                    }
                 }
             }
             return null;
@@ -391,9 +412,9 @@
                 ctx.drawImage(img, 0, 0, size, size);
                 const data = ctx.getImageData(0, 0, size, size).data;
 
-                let topHeadY = size;
-                let weightedX = 0;
-                let totalWeight = 0;
+                let topMostY = size;
+                let sumX = 0;
+                let count = 0;
 
                 for (let y = 0; y < size; y++) {
                     for (let x = 0; x < size; x++) {
@@ -402,46 +423,42 @@
                         const g = data[idx + 1];
                         const b = data[idx + 2];
 
-                        // Detectar tonos cálidos de pelaje de jirafa (amarillo/ocre/marrón) frente a cielo azul o follaje verde
-                        const isGiraffeTone = r > 95 && g > 55 && r > b * 1.28 && (r - b) > 35;
-                        if (isGiraffeTone) {
-                            // Dar mayor peso a la zona superior donde está la cabeza
-                            const topPriority = 1 + (size - y) / size;
-                            weightedX += x * topPriority;
-                            totalWeight += topPriority;
-                            if (y < topHeadY) {
-                                topHeadY = y;
+                        // Tonos cálidos/ocres/marrones típicos del pelaje de la jirafa
+                        if (r > 95 && g > 55 && r > g * 1.15 && g > b * 1.15) {
+                            if (y < topMostY) topMostY = y;
+                            if (y <= topMostY + 12) {
+                                sumX += x;
+                                count++;
                             }
                         }
                     }
                 }
 
-                if (totalWeight > 12) {
-                    const focusX = Math.min(82, Math.max(18, Math.round((weightedX / totalWeight / size) * 100)));
-                    // Posicionar ligeramente por debajo del punto más alto detectado (osiconos/orejas) para asegurar cabeza completa
-                    const focusY = Math.min(45, Math.max(4, Math.round(((topHeadY + 4) / size) * 100)));
-                    return `${focusX}% ${focusY}%`;
+                if (count > 5) {
+                    const posX = Math.min(85, Math.max(15, Math.round((sumX / count / size) * 100)));
+                    const posY = Math.min(35, Math.max(5, Math.round((topMostY / size) * 100) + 4));
+                    return `${posX}% ${posY}%`;
                 }
             } catch (e) {
-                // Respaldo si CORS impide leer píxeles
+                // Respaldo seguro si el navegador restringe la lectura de píxeles
             }
-            const isPortrait = img.naturalHeight >= img.naturalWidth;
-            return isPortrait ? '50% 10%' : '50% 15%';
+            return 'center 14%';
         }
 
         // Evita asignar formas ultra-estrechas o ultra-aplastadas que recortan demasiado la cabeza
-        function pickCompatibleShape(img) {
+        function pickCompatibleShape(img, type) {
+            if (type === 'wheat') {
+                return pickAbstractShape();
+            }
+
             const ratio = img.naturalWidth / (img.naturalHeight || 1);
             let candidates = sessionShapes.filter(s => {
                 if (ratio < 0.85) {
-                    // Foto vertical: evitar tiras horizontales extremas que cortan cabeza y cuello
-                    return s !== 'shape-strip-h' && s !== 'shape-banner';
+                    return ['shape-strip-v', 'shape-tall', 'shape-pillar', 'shape-sliver', 'shape-medium'].includes(s);
+                } else if (ratio > 1.35) {
+                    return ['shape-wide', 'shape-hero', 'shape-banner', 'shape-medium', 'shape-compact'].includes(s);
                 }
-                if (ratio > 1.35) {
-                    // Foto horizontal: evitar columnas estrechas que recortan los lados de la cabeza
-                    return s !== 'shape-strip-v' && s !== 'shape-sliver' && s !== 'shape-pillar';
-                }
-                return true;
+                return !['shape-strip-h', 'shape-strip-v'].includes(s);
             });
 
             if (candidates.length === 0) candidates = sessionShapes;
@@ -454,7 +471,8 @@
             return `${shape} ${cut}`;
         }
 
-        function createTile(url) {
+        function createTile(item) {
+            const { url, type } = item;
             const tile = document.createElement('div');
             tile.className = 'tile';
 
@@ -466,8 +484,12 @@
             img.fetchPriority = 'high';
 
             img.onload = () => {
-                tile.classList.add(...pickCompatibleShape(img).split(' '));
-                img.style.objectPosition = detectGiraffeHeadFocalPoint(img);
+                tile.classList.add(...pickCompatibleShape(img, type).split(' '));
+                if (type === 'giraffe') {
+                    img.style.objectPosition = detectGiraffeHeadFocalPoint(img);
+                } else {
+                    img.style.objectPosition = 'center center';
+                }
                 tile.classList.add('loaded');
             };
 
@@ -488,16 +510,21 @@
             if (isLoadingBatch) return;
             isLoadingBatch = true;
 
-            if (availableUrls.length < count) {
-                await fetchMoreGiraffes();
+            if (giraffeUrls.length < count / 2 || wheatUrls.length < count / 2) {
+                await fetchMoreMedia();
             }
 
-            let created = 0;
-            while (created < count) {
-                const url = popUniqueUrl();
-                if (!url) break;
-                createTile(url);
-                created++;
+            // Mezclar el orden de aparición de cada lote manteniendo la proporción exacta 50% / 50%
+            const batchItems = [];
+            for (let i = 0; i < count; i++) {
+                const item = popUniqueItem();
+                if (!item) break;
+                batchItems.push(item);
+            }
+            shuffle(batchItems);
+
+            for (const item of batchItems) {
+                createTile(item);
             }
 
             setTimeout(() => {
@@ -508,7 +535,7 @@
 
         function checkSentinelVisibility() {
             const rect = sentinel.getBoundingClientRect();
-            if (rect.top <= window.innerHeight + 700 && availableUrls.length > 0) {
+            if (rect.top <= window.innerHeight + 700 && (giraffeUrls.length > 0 || wheatUrls.length > 0)) {
                 loadBatch(10);
             }
         }
@@ -525,10 +552,10 @@
 
         window.addEventListener('DOMContentLoaded', async () => {
             randomizeSessionLayout();
-            await fetchMoreGiraffes();
+            await fetchMoreMedia();
             loadBatch(18);
             // Precarga un segundo lote en segundo plano sin bloquear el renderizado inicial
-            fetchMoreGiraffes();
+            fetchMoreMedia();
         });
     </script>
 </body>
